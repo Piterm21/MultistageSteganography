@@ -1,0 +1,67 @@
+﻿<Window x:Class="MultistageSteganography.LSBEncodeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:MultistageSteganography"
+        Title="Input" SizeToContent="WidthAndHeight" WindowStartupLocation="CenterScreen"
+        MaxHeight="720"
+        MaxWidth="1280">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Margin="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <GroupBox Header="Choose encoding mode:" Grid.Row="0">
+                    <StackPanel Name="encodingMode">
+                        <RadioButton Content="Single layer encoding" IsChecked="true" Click="SingleLayerEncoding_Checked"/>
+                        <RadioButton Content="Double layer encoding" Click="DoubleLayerEncoding_Checked"/>
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Name="layerTypes" Header="Layers" Grid.Row="1">
+                    <StackPanel>
+                        <GroupBox Header="Choose encoding source type for first layer:">
+                            <StackPanel Name="encodingSourceTypeFirstLayer">
+                                <RadioButton Tag="{x:Static local:LayerSourceType.Text}" Content="Text" Click="ChangeLayerDataType_Click" IsChecked="true"></RadioButton>
+                                <RadioButton Tag="{x:Static local:LayerSourceType.File}" Content="File" Click="ChangeLayerDataType_Click"></RadioButton>
+                                <Grid Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="Choose file" Click="ChooseFile"></Button>
+                                    <Label Grid.Column="1" Content="asdasdasdasd" BorderBrush="Black" BorderThickness="1px"></Label>
+                                </Grid>
+                                <TextBox TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Grid.Row="1" MinWidth="250" MinHeight="50">Answer</TextBox>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox Header="Choose encoding source type for second layer:">
+                            <StackPanel Name="encodingSourceTypeSecondLayer">
+                                <RadioButton Tag="{x:Static local:LayerSourceType.Text}" Content="Text" IsEnabled="False"  Click="ChangeLayerDataType_Click"></RadioButton>
+                                <RadioButton Tag="{x:Static local:LayerSourceType.File}" Content="File" IsEnabled="False"  Click="ChangeLayerDataType_Click"></RadioButton>
+                                <Grid Visibility="Collapsed">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="Choose file" Click="ChooseFile"></Button>
+                                    <Label Grid.Column="1" Content="asdasdasdasd" BorderBrush="Black" BorderThickness="1px"></Label>
+                                </Grid>
+                                <TextBox Visibility="Collapsed" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Grid.Row="1" MinWidth="250" MinHeight="50">Answer</TextBox>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </GroupBox>
+            </Grid>
+            <WrapPanel Grid.Row="2" HorizontalAlignment="Right" Margin="0,15,0,0">
+                <Button IsDefault="True" Name="LSBEncodeDialogOKButton" Click="LSBEncodeDialogOK" MinWidth="60" Margin="0,0,10,0">Ok</Button>
+                <Button IsCancel="True" MinWidth="60">Cancel</Button>
+            </WrapPanel>
+        </Grid>
+    </ScrollViewer>
+</Window>
