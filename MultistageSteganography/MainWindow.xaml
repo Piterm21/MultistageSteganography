@@ -15,8 +15,6 @@
             <MenuItem Header="Steganography">
                 <MenuItem Header="Encode LSB" Click="EncodeLSB"></MenuItem>
                 <MenuItem Header="Decode LSB" Click="DecodeLSB"></MenuItem>
-                <MenuItem Header="Encode MSB" Click="OpenImage"></MenuItem>
-                <MenuItem Header="Decode MSB" Click="OpenImage"></MenuItem>
             </MenuItem>
         </Menu>
         <Grid>
