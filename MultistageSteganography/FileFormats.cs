@@ -265,14 +265,14 @@ namespace MultistageSteganography
         {
             bool result = false;
 
-            BinaryBitReader binaryReader = new BinaryBitReader(new MemoryStream(fileBytes));
-            UInt16 readMarker = binaryReader.ReadUInt16();
+            MemoryStreamWithTypedReads binaryReader = new MemoryStreamWithTypedReads(fileBytes);
+            UInt16 readMarker = binaryReader.readUInt16();
             bool firstPass = true;
 
             if (readMarker != JpgMarkers.startOfImage && firstPass) {
                 firstPass = false;
-                binaryReader = new BigEndianBinaryReader(new MemoryStream(fileBytes));
-                readMarker = binaryReader.ReadUInt16();
+                binaryReader.toggleEndianess();
+                readMarker = binaryReader.lastUInt16();
 
                 if (readMarker == JpgMarkers.startOfImage) {
                     result = true;
@@ -330,23 +330,23 @@ namespace MultistageSteganography
                 codeLength++;
             }
 
-            BinaryBitReader binaryReader = new BinaryBitReader(new MemoryStream(fileBytes));
+            MemoryStreamWithTypedReads binaryReader = new MemoryStreamWithTypedReads(fileBytes);
             UInt16 readMarker;
             bool firstPass = true;
             bool dataNotStarted = true;
 
-            while (((readMarker = binaryReader.ReadUInt16()) != JpgMarkers.endOfImage) && jpgFileHeaders.fileOk && dataNotStarted) {
+            while (((readMarker = binaryReader.readUInt16()) != JpgMarkers.endOfImage) && jpgFileHeaders.fileOk && dataNotStarted) {
                 dataNotStarted = readMarker != JpgMarkers.startOfScan;
 
                 if (dataNotStarted) {
                     switch (readMarker) {
                         case (JpgMarkers.startOfHuffmanTables): {
-                            UInt16 expectedTablesLength = binaryReader.ReadUInt16();
+                            UInt16 expectedTablesLength = binaryReader.readUInt16();
                             jpgFileHeaders.imageDataStartOffsetInBytes += 2 + expectedTablesLength;
 
                             for (UInt64 readBytes = 2; readBytes < expectedTablesLength; readBytes++) {
                                 UInt32 currentTableLength = 0;
-                                byte classAndIndetifierByte = binaryReader.ReadByte();
+                                byte classAndIndetifierByte = binaryReader.readByte();
                                 currentTableLength += 8;
                                 readBytes++;
                                 HuffmanCodesBinaryTree huffmanCodesBinaryTree = new HuffmanCodesBinaryTree();
@@ -356,7 +356,7 @@ namespace MultistageSteganography
                                 byte[] extractedHuffmanCodeCounts = new byte[16];
 
                                 for (int lengthOfCode = 1; lengthOfCode <= 16; lengthOfCode++) {
-                                    extractedHuffmanCodeCounts[lengthOfCode - 1] = binaryReader.ReadByte();
+                                    extractedHuffmanCodeCounts[lengthOfCode - 1] = binaryReader.readByte();
                                     currentTableLength += 8;
                                     readBytes++;
                                 }
@@ -366,7 +366,7 @@ namespace MultistageSteganography
                                         maxCodeLength = (byte)lengthOfCode;
 
                                         HackBinaryTreeElement nextElement = currentBinaryTree.freeNodesAtCurrentDepth.Peek();
-                                        byte value = binaryReader.ReadByte();
+                                        byte value = binaryReader.readByte();
 
                                         huffmanCodesBinaryTree.valueToHuffmanCodeDictionary.Add(value, nextElement.unwind());
                                         currentBinaryTree.addValue(value);
@@ -387,15 +387,15 @@ namespace MultistageSteganography
                         } break;
 
                         case (JpgMarkers.startOfFrameBaselineDCT): {
-                            UInt16 expectedLength = binaryReader.ReadUInt16();
-                            binaryReader.ReadBytes(5);
+                            UInt16 expectedLength = binaryReader.readUInt16();
+                            binaryReader.readBytes(5);
 
-                            byte amountOfComponents = binaryReader.ReadByte();
+                            byte amountOfComponents = binaryReader.readByte();
                             jpgFileHeaders.jpgComponents = new JpgComponent[amountOfComponents];
 
                             for (int componentIndex = 0; componentIndex < amountOfComponents; componentIndex++) {
-                                jpgFileHeaders.jpgComponents[componentIndex].componentSelector = binaryReader.ReadByte();
-                                byte horizontalAndVerticalRepeatCount = binaryReader.ReadByte();
+                                jpgFileHeaders.jpgComponents[componentIndex].componentSelector = binaryReader.readByte();
+                                byte horizontalAndVerticalRepeatCount = binaryReader.readByte();
                                 jpgFileHeaders.jpgComponents[componentIndex].repeatCount = (byte)(((horizontalAndVerticalRepeatCount >> 4) & 0x0F) * (horizontalAndVerticalRepeatCount & 0x0F));
                                 binaryReader.ReadByte();
                             }
@@ -406,8 +406,8 @@ namespace MultistageSteganography
                         default: {
                             if (readMarker != JpgMarkers.startOfImage && firstPass) {
                                 firstPass = false;
-                                binaryReader = new BigEndianBinaryReader(new MemoryStream(fileBytes));
-                                readMarker = binaryReader.ReadUInt16();
+                                binaryReader.toggleEndianess();
+                                readMarker = binaryReader.lastUInt16();
 
                                 if (readMarker != JpgMarkers.startOfImage) {
                                     jpgFileHeaders.fileOk = false;
@@ -415,9 +415,9 @@ namespace MultistageSteganography
                                     jpgFileHeaders.isLittleEndian = false;
                                 }
                             } else {
-                                UInt16 length = binaryReader.ReadUInt16();
+                                UInt16 length = binaryReader.readUInt16();
                                 int dataLength = length - 2;
-                                binaryReader.ReadBytes(dataLength);
+                                binaryReader.readBytes(dataLength);
                                 jpgFileHeaders.imageDataStartOffsetInBytes += 2 + length;
                             }
                         } break;
@@ -433,22 +433,20 @@ namespace MultistageSteganography
             JpgFileStatistics result = new JpgFileStatistics();
 
             result.jpgFileHeaders = readJpgFileHeader(ref fileBytes);
-            BinaryBitReader binaryReader;
+            MemoryStreamWithTypedReads binaryReader = new MemoryStreamWithTypedReads(fileBytes);
 
-            if (result.jpgFileHeaders.isLittleEndian) {
-                binaryReader = new BinaryBitReader(new MemoryStream(fileBytes));
-            } else {
-                binaryReader = new BigEndianBinaryReader(new MemoryStream(fileBytes));
+            if (!result.jpgFileHeaders.isLittleEndian) {
+                binaryReader.toggleEndianess();
             }
 
-            binaryReader.ReadBytes(result.jpgFileHeaders.imageDataStartOffsetInBytes);
-            UInt16 startScanMarker = binaryReader.ReadUInt16();
+            binaryReader.readBytes(result.jpgFileHeaders.imageDataStartOffsetInBytes);
+            UInt16 startScanMarker = binaryReader.readUInt16();
 
             if (startScanMarker == JpgMarkers.startOfScan) {
                 byte numberOfComponents = extractScanHeader(ref binaryReader, ref result.jpgFileHeaders);
-                result.startOfScanOffset = binaryReader.BaseStream.Position;
+                result.startOfScanOffset = binaryReader.Position;
                 result.decodedDCTtables = extractDCTtables(numberOfComponents, ref binaryReader, ref result.jpgFileHeaders);
-                result.endOfScanOffset = binaryReader.BaseStream.Position - 3;
+                result.endOfScanOffset = binaryReader.Position - 3;
             }
 
             return result;
@@ -623,13 +621,11 @@ namespace MultistageSteganography
 
                         if (numberOfZeros != 0) {
                             while (numberOfZeros >= 16) {
-                                // 11110000
-                                short valueToEncode = 0xF0;
-                                int encodedLength = encodeAndAddCodepointToList(valueToEncode, jpgFileStatistics.decodedDCTtables[tableIndex].ACidentifier, ref jpgFileStatistics.jpgFileHeaders, ref newBitstreamToOverride);
+                                int encodedLength = encodeAndAddCodepointToList(0, 15, jpgFileStatistics.decodedDCTtables[tableIndex].ACidentifier, ref jpgFileStatistics.jpgFileHeaders, ref newBitstreamToOverride);
                                 newBitstreamLength += encodedLength;
                                 oldBitstreamLength += encodedLength;
 
-                                numberOfZeros -= 16;
+                                numberOfZeros -= 17;
                             }
 
                             if (numberOfZeros != 0) {
@@ -654,13 +650,11 @@ namespace MultistageSteganography
             }
 
             MemoryStream memoryStream = new MemoryStream();
-            long notOverridenDataStart = jpgFileStatistics.startOfScanOffset + (oldBitstreamLength / 8);
-
             memoryStream.Write(fileBytes, 0, (int)jpgFileStatistics.startOfScanOffset);
+            int bytesAdded = 0;
 
             byte value = 0;
             int currentBit = 0;
-            int bytesWriten = 0;
             int currentIndex = 0;
 
             while (newBitstreamToOverride.Count > currentIndex) {
@@ -670,33 +664,73 @@ namespace MultistageSteganography
                 if (currentBit == 8) {
                     currentBit = 0;
                     writeEncodedValueToStream(value, ref memoryStream);
+
+                    if (value == 0xFF) {
+                        newBitstreamLength += 8;
+                        bytesAdded++;
+                    }
+
                     value = 0;
-                    bytesWriten++;
                 }
                 currentIndex++;
             }
 
-            long currentNotOverridenByte = notOverridenDataStart;
-            int offsetCorrection = (8 - (Math.Abs((int)(newBitstreamLength - oldBitstreamLength)) % 8));
+            // cb = 1
+            // value = 1000 0000
+            // bo = 7
+            // buffer = 1000 0000 0000 0000
+            // buffer = 1111 1111 1000 0000
+
+            // cb  = 1
+            // bo = 7
+            // covoc = 4
+            // 1111 1000 0000 0000
+            // 1111 1111 1111 1000
+
+            // cb = 7
+            // bo = 1
+            // covoc = 7
+
+            // 16 - cb - (8 - covoc) % 9
+            // 1111 1110 0000 0000
+            // 1111 1111 0000 0000
+
+            // 1100 0000 0000 0000
+            // 1111 1100 0000 0000
+
+            for (long i = 1; i < oldBitstreamLength / 8; i++) {
+                if (fileBytes[i + jpgFileStatistics.jpgFileHeaders.imageDataStartOffsetInBytes] == 0xFF) {
+                    oldBitstreamLength += 8;
+                }
+            }
+
+            long currentNotOverridenByte = jpgFileStatistics.startOfScanOffset + (oldBitstreamLength / 8);
+            int bitOffset = (8 - currentBit);
+            int copiedValueOffsetCorrection = (int)(oldBitstreamLength % 8);
+            int nextOffset = 16 - currentBit - (8 - copiedValueOffsetCorrection);
 
             if (currentBit != 0) {
                 UInt16 buffer = (UInt16)(value << 8);
 
-                UInt16 valueToOr = (UInt16)((byte)(fileBytes[currentNotOverridenByte] << (8 - currentBit)));
-                valueToOr = (UInt16)(valueToOr << (offsetCorrection - (8 - currentBit)));
-                buffer |= valueToOr;
+                buffer |= (UInt16)(((byte)(fileBytes[currentNotOverridenByte] << copiedValueOffsetCorrection) << bitOffset));
                 currentNotOverridenByte++;
-                buffer |= (UInt16)(fileBytes[currentNotOverridenByte] << (offsetCorrection - 8));
+
+                if (nextOffset > 8) {
+                    nextOffset -= 8;
+                    buffer |= (UInt16)((fileBytes[currentNotOverridenByte] << nextOffset));
+                    currentNotOverridenByte++;
+                }
+
                 writeEncodedValueToStream((byte)(buffer >> 8), ref memoryStream);
                 buffer = (UInt16)(buffer << 8);
-                currentNotOverridenByte++;
+
                 //NOTICE: only fix marker if it's byte aligned?
                 while (currentNotOverridenByte <= jpgFileStatistics.endOfScanOffset) {
-                    if (fileBytes[currentNotOverridenByte] == 0 && fileBytes[currentNotOverridenByte - 1] == 0xFF && (offsetCorrection != 8 || offsetCorrection != 16)) {
+                    if (fileBytes[currentNotOverridenByte] == 0 && fileBytes[currentNotOverridenByte - 1] == 0xFF) {
                         currentNotOverridenByte++;
                     }
 
-                    buffer |= (UInt16)(fileBytes[currentNotOverridenByte] << (offsetCorrection - 8));
+                    buffer |= (UInt16)(fileBytes[currentNotOverridenByte] << nextOffset);
 
                     writeEncodedValueToStream((byte)(buffer >> 8), ref memoryStream);
 
@@ -706,15 +740,17 @@ namespace MultistageSteganography
 
                 byte finalValue = (byte)(buffer >> 8);
 
-                for (int currentPadIndex = 7 - (currentBit); currentPadIndex >= 0; currentPadIndex--) {
-                    finalValue |= (byte)(1 << currentPadIndex);
-                }
+                if (finalValue != 0x00) {
+                    for (int currentPadIndex = (7 - currentBit); currentPadIndex >= 0; currentPadIndex--) {
+                        finalValue |= (byte)(1 << currentPadIndex);
+                    }
 
-                if (finalValue != 0xFF) {
-                    writeEncodedValueToStream(finalValue, ref memoryStream);
+                    if (finalValue != 0xFF) {
+                        writeEncodedValueToStream(finalValue, ref memoryStream);
+                    }
                 }
             } else {
-                memoryStream.Write(fileBytes, (int)currentNotOverridenByte, (int)(jpgFileStatistics.endOfScanOffset - currentNotOverridenByte));
+                memoryStream.Write(fileBytes, (int)currentNotOverridenByte, (int)(jpgFileStatistics.endOfScanOffset - currentNotOverridenByte + 1));
             }
 
             memoryStream.Write(fileBytes, (int)(jpgFileStatistics.endOfScanOffset + 1), (int)(fileBytes.Length - (jpgFileStatistics.endOfScanOffset + 1)));
@@ -764,17 +800,15 @@ namespace MultistageSteganography
         public static byte[] decodeDataFromFileBytesJpg (ref byte[] fileBytes)
         {
             JpgHeaders jpgFileHeaders = FileFormatHelpers.readJpgFileHeader(ref fileBytes);
-            BinaryBitReader binaryReader;
+            MemoryStreamWithTypedReads binaryReader = new MemoryStreamWithTypedReads(fileBytes);
             byte[] result = null;
 
-            if (jpgFileHeaders.isLittleEndian) {
-                binaryReader = new BinaryBitReader(new MemoryStream(fileBytes));
-            } else {
-                binaryReader = new BigEndianBinaryReader(new MemoryStream(fileBytes));
+            if (!jpgFileHeaders.isLittleEndian) {
+                binaryReader.toggleEndianess();
             }
 
-            binaryReader.ReadBytes(jpgFileHeaders.imageDataStartOffsetInBytes);
-            UInt16 startScanMarker = binaryReader.ReadUInt16();
+            binaryReader.readBytes(jpgFileHeaders.imageDataStartOffsetInBytes);
+            UInt16 startScanMarker = binaryReader.readUInt16();
 
             if (startScanMarker == JpgMarkers.startOfScan) {
                 byte numberOfComponents = FileFormatHelpers.extractScanHeader(ref binaryReader, ref jpgFileHeaders);
@@ -790,7 +824,7 @@ namespace MultistageSteganography
             return result;
         }
 
-        public static byte[] readBitsFromBinaryReader(ref HuffmanCodesBinaryTree huffmanCodesBinaryTree, ref byte[] overReadBitsFromPreviousRead, ref BinaryBitReader binaryReader)
+        public static byte[] readBitsFromBinaryReader(ref HuffmanCodesBinaryTree huffmanCodesBinaryTree, ref byte[] overReadBitsFromPreviousRead, ref MemoryStreamWithTypedReads binaryReader)
         {
             int additionAmountOfBitsToRead = 0;
 
@@ -807,7 +841,7 @@ namespace MultistageSteganography
             return readBits;
         }
 
-        public static DCTvalue extractValueFromBits(ref byte[] readBits, ref BinaryBitReader binaryReader, ref JpgHeaders jpgFileHeaders, byte signedCodepointLength, int overflowLength)
+        public static DCTvalue extractValueFromBits(ref byte[] readBits, ref MemoryStreamWithTypedReads binaryReader, ref JpgHeaders jpgFileHeaders, byte signedCodepointLength, int overflowLength)
         {
             byte[] signedCodepoint = new byte[signedCodepointLength];
 
@@ -905,25 +939,25 @@ namespace MultistageSteganography
             return encodedLength;
         }
 
-        public static byte extractScanHeader(ref BinaryBitReader binaryReader, ref JpgHeaders jpgFileHeaders)
+        public static byte extractScanHeader(ref MemoryStreamWithTypedReads binaryReader, ref JpgHeaders jpgFileHeaders)
         {
-            UInt16 scanHeaderLength = binaryReader.ReadUInt16();
-            byte numberOfComponents = binaryReader.ReadByte();
+            UInt16 scanHeaderLength = binaryReader.readUInt16();
+            byte numberOfComponents = binaryReader.readByte();
 
             for (int componentIndex = 0; componentIndex < numberOfComponents; componentIndex++) {
                 binaryReader.ReadByte();
-                byte DCandACtableSelector = binaryReader.ReadByte();
+                byte DCandACtableSelector = binaryReader.readByte();
 
                 jpgFileHeaders.jpgComponents[componentIndex].DCtableSelector = (byte)((DCandACtableSelector >> 4) & 0x0F);
                 jpgFileHeaders.jpgComponents[componentIndex].ACtableSelector = (UInt16)(DCandACtableSelector & 0x0F);
             }
 
-            binaryReader.ReadBytes(3);
+            binaryReader.readBytes(3);
 
             return numberOfComponents;
         }
 
-        public static List<DCTtable> extractDCTtables(byte numberOfComponents, ref BinaryBitReader binaryReader, ref JpgHeaders jpgFileHeaders)
+        public static List<DCTtable> extractDCTtables(byte numberOfComponents, ref MemoryStreamWithTypedReads binaryReader, ref JpgHeaders jpgFileHeaders)
         {
             byte[] overReadBits = new byte[0];
             List<DCTtable> decodedDCTtables = new List<DCTtable>();

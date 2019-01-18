@@ -1,16 +1,135 @@
 ﻿using System;
 using System.IO;
 
-
 namespace MultistageSteganography
 {
-    class BinaryBitReader : BinaryReader
+    class MemoryStreamWithTypedReads : MemoryStream
     {
-        public BinaryBitReader (System.IO.Stream stream) : base(stream) { }
         byte? currentByte = null;
         byte indexOfLastReturnedBitInCurrentByte = 0;
+        byte[] tempBuffer = new byte[8];
+        bool isLittleEndian = true;
 
-        public byte[] readBitsCorrectForNullMarker(byte amount)
+        public MemoryStreamWithTypedReads (byte[] buffer) : base(buffer) { }
+
+        private Int64 tempBufferToValue (int numberOfBytes)
+        {
+            Int64 result = 0;
+
+            int shift = 56;
+
+            if (isLittleEndian) {
+                Array.Reverse(tempBuffer);
+            }
+
+            for (int i = 0; i < 8; i++) {
+                result |= ((Int64)tempBuffer[i] << shift);
+                shift -= 8;
+            }
+
+            if (!isLittleEndian) {
+                result = result >> (64 - (numberOfBytes * 8));
+            }
+
+            return result;
+        }
+
+        public void toggleEndianess()
+        {
+            isLittleEndian = !isLittleEndian;
+            Array.Reverse(tempBuffer);
+        }
+
+        public byte readByte ()
+        {
+            byte result = 0;
+
+            Read(tempBuffer, 0, 1);
+            result = (byte)tempBufferToValue(1);
+
+            return result;
+        }
+
+        public UInt16 readUInt16 ()
+        {
+            UInt16 result = 0;
+
+            Read(tempBuffer, 0, 2);
+            result = (UInt16)tempBufferToValue(2);
+
+            return result;
+        }
+
+        public UInt32 readUInt32 ()
+        {
+            UInt32 result = 0;
+
+            Read(tempBuffer, 0, 4);
+            result = (UInt32)tempBufferToValue(4);
+
+            return result;
+        }
+
+        public UInt64 readUInt64 ()
+        {
+            UInt64 result = 0;
+
+            Read(tempBuffer, 0, 8);
+            result = (UInt64)tempBufferToValue(8);
+
+            return result;
+        }
+
+        public byte lastByte ()
+        {
+            byte result = 0;
+
+            result = (byte)tempBufferToValue(1);
+
+            return result;
+        }
+
+        public UInt16 lastUInt16 ()
+        {
+            UInt16 result = 0;
+
+            result = (UInt16)tempBufferToValue(2);
+
+            return result;
+        }
+
+        public UInt32 lastUInt32 ()
+        {
+            UInt32 result = 0;
+
+            result = (UInt32)tempBufferToValue(4);
+
+            return result;
+        }
+
+        public UInt64 lastUInt64 ()
+        {
+            UInt64 result = 0;
+
+            result = (UInt64)tempBufferToValue(8);
+
+            return result;
+        }
+
+        public byte[] readBytes (int n)
+        {
+            byte[] result = new byte[n];
+
+            Read(result, 0, n);
+
+            if (isLittleEndian) {
+                Array.Reverse(result);
+            }
+
+            return result;
+        }
+
+        public byte[] readBitsCorrectForNullMarker (byte amount)
         {
             byte[] result;
 
@@ -21,10 +140,10 @@ namespace MultistageSteganography
                 while (bitsRead < amount) {
                     if (currentByte == null) {
                         if (!this.peekForEndOfImageMarker()) {
-                            currentByte = this.ReadByte();
+                            currentByte = readByte();
 
                             if (currentByte == 0xFF) {
-                                byte temp = this.ReadByte();
+                                byte temp = readByte();
 
                                 if (temp != 0x00) {
                                     throw new Exception("unexpected marker in scan data");
@@ -53,59 +172,33 @@ namespace MultistageSteganography
             return result;
         }
 
-        public bool checkForEndOfImageMarker()
+        public bool checkForEndOfImageMarker ()
         {
             bool result = false;
             byte[] temp = new byte[2];
-            this.BaseStream.Read(temp, 0, 2);
-            this.BaseStream.Seek(-2, SeekOrigin.Current);
+            Read(temp, 0, 2);
+            Seek(-2, SeekOrigin.Current);
 
             if ((UInt16)(temp[0] << 8 | temp[1]) == 0xFFD9) {
-                this.ReadBytes(2);
+                this.Read(temp, 0, 2);
                 result = true;
             }
 
             return result;
         }
 
-        public bool peekForEndOfImageMarker()
+        public bool peekForEndOfImageMarker ()
         {
             bool result = false;
             byte[] temp = new byte[2];
-            this.BaseStream.Read(temp, 0, 2);
-            this.BaseStream.Seek(-2, SeekOrigin.Current);
+            Read(temp, 0, 2);
+            Seek(-2, SeekOrigin.Current);
 
             if ((UInt16)(temp[0] << 8 | temp[1]) == 0xFFD9) {
                 result = true;
             }
 
             return result;
-        }
-    }
-
-    class BigEndianBinaryReader : BinaryBitReader
-    {
-        public BigEndianBinaryReader (System.IO.Stream stream) : base(stream) { }
-
-        public override ulong ReadUInt64()
-        {
-            var data = base.ReadBytes(8);
-            Array.Reverse(data);
-            return BitConverter.ToUInt64(data, 0);
-        }
-
-        public override uint ReadUInt32()
-        {
-            var data = base.ReadBytes(4);
-            Array.Reverse(data);
-            return BitConverter.ToUInt32(data, 0);
-        }
-
-        public override ushort ReadUInt16()
-        {
-            var data = base.ReadBytes(2);
-            Array.Reverse(data);
-            return BitConverter.ToUInt16(data, 0);
         }
     }
 }
