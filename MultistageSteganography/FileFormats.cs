@@ -570,7 +570,7 @@ namespace MultistageSteganography
                         byte bitPosition = (byte)(currentMessageBit - (UInt64)currentMessageByte * 8);
                         Int16 valueToSet = (Int16)(((messageAsByteArray[currentMessageByte] & (byte)(1 << bitPosition)) != 0) ? 1 : 0);
 
-                        if (currentValue.value != 1) {
+                        if (currentValue.value != 1 && valueInTableIndex != 0) {
                             currentValue.value = (Int16)((Int16)((currentValue.value >> 1) << 1) | valueToSet);
                             currentMessageBit++;
                         }
@@ -770,7 +770,7 @@ namespace MultistageSteganography
                     while (currentValueInTableIndex < 64 && (UInt64)resultBytesList.Count < n) {
                         DCTvalue currentDCTvalue = decodedDCTtables[currentTableIndex].table[currentValueInTableIndex];
 
-                        if (currentDCTvalue.value != 0 && currentDCTvalue.value != 1) {
+                        if (currentDCTvalue.value != 0 && currentDCTvalue.value != 1 && currentValueInTableIndex != 0) {
                             currentByte |= (byte)((currentDCTvalue.value & 0x01) << currentBit);
 
                             if (currentBit == 7) {
