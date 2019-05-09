@@ -396,7 +396,8 @@ namespace MultistageSteganography
                             for (int componentIndex = 0; componentIndex < amountOfComponents; componentIndex++) {
                                 jpgFileHeaders.jpgComponents[componentIndex].componentSelector = binaryReader.readByte();
                                 byte horizontalAndVerticalRepeatCount = binaryReader.readByte();
-                                jpgFileHeaders.jpgComponents[componentIndex].repeatCount = (byte)(((horizontalAndVerticalRepeatCount >> 4) & 0x0F) * (horizontalAndVerticalRepeatCount & 0x0F));
+                                jpgFileHeaders.jpgComponents[componentIndex].repeatCount = (byte)(((horizontalAndVerticalRepeatCount >> 4) & 0x0F) *
+                                        (horizontalAndVerticalRepeatCount & 0x0F));
                                 binaryReader.ReadByte();
                             }
 
@@ -495,16 +496,25 @@ namespace MultistageSteganography
             return result;
         }
 
-        public static void encodeDataIntoFileBytesBmp(ref BmpFileHeaders bmpFileHeaders, ref byte[] messageAsByteArray, ref byte[] fileBytes)
-        {
+        public static void encodeDataIntoFileBytesBmp(
+            ref BmpFileHeaders bmpFileHeaders, 
+            ref byte[] messageAsByteArray, 
+            ref byte[] fileBytes
+        ) {
+            int bytesPerPixel = (bmpFileHeaders.infoHeader.bitsPerPixel / 8);
+            uint bytesPerRow = bmpFileHeaders.infoHeader.width * (uint)bytesPerPixel;
+            int bitsInMessage = messageAsByteArray.Length * 8;
+
             int currentMessageBit = 0;
-            for (int y = 0; y < bmpFileHeaders.infoHeader.height && (currentMessageBit < messageAsByteArray.Length * 8); y++) {
-                for (int x = 0; x < bmpFileHeaders.infoHeader.width * (bmpFileHeaders.infoHeader.bitsPerPixel / 8) && (currentMessageBit < messageAsByteArray.Length * 8); x++) {
+            for (int y = 0; y < bmpFileHeaders.infoHeader.height && (currentMessageBit < bitsInMessage); y++) {
+                for (int x = 0; x < bytesPerRow && currentMessageBit < bitsInMessage; x++) {
                     int currentMessageByte = currentMessageBit / 8;
                     int bitPosition = currentMessageBit - currentMessageByte * 8;
                     byte valueToSet = (byte)((messageAsByteArray[currentMessageByte] & (byte)(1 << bitPosition)) >> bitPosition);
-                    long currentBytesOffset = (x + y * bmpFileHeaders.infoHeader.width * 3) + bmpFileHeaders.header.dataOffset;
+
+                    long currentBytesOffset = (x + y * bmpFileHeaders.infoHeader.width * bytesPerPixel) + bmpFileHeaders.header.dataOffset;
                     fileBytes[currentBytesOffset] = (byte)((((byte)(fileBytes[currentBytesOffset] >> 1)) << 1) | valueToSet);
+
                     currentMessageBit++;
                 }
             }
@@ -565,12 +575,12 @@ namespace MultistageSteganography
                 for (int valueInTableIndex = 0; valueInTableIndex < currentDCTtable.Length && (currentMessageBit < (UInt64)messageAsByteArray.Length * 8); valueInTableIndex++) {
                     ref DCTvalue currentValue = ref currentDCTtable[valueInTableIndex];
 
-                    if (currentValue.value != 0) {
+                    if (currentValue.value != 0 && valueInTableIndex != 0) {
                         int currentMessageByte = (int)(currentMessageBit / 8);
                         byte bitPosition = (byte)(currentMessageBit - (UInt64)currentMessageByte * 8);
                         Int16 valueToSet = (Int16)(((messageAsByteArray[currentMessageByte] & (byte)(1 << bitPosition)) != 0) ? 1 : 0);
 
-                        if (currentValue.value != 1 && valueInTableIndex != 0) {
+                        if (currentValue.value != 1) {
                             currentValue.value = (Int16)((Int16)((currentValue.value >> 1) << 1) | valueToSet);
                             currentMessageBit++;
                         }
@@ -585,7 +595,6 @@ namespace MultistageSteganography
             long newBitstreamLength = 0;
             long overwrittenValuesEncoded = 0;
 
-            //TODO: fix encoding bug can't be noticed with small amount of changes but noticable when amount of changes is large 
             for (int tableIndex = 0; tableIndex < jpgFileStatistics.decodedDCTtables.Count && overwrittenValuesEncoded < valuesUsed; tableIndex++) {
                 DCTvalue[] currentDCTtable = new DCTvalue[64];
                 currentDCTtable = jpgFileStatistics.decodedDCTtables[tableIndex].table;
@@ -601,11 +610,6 @@ namespace MultistageSteganography
 
                         first = false;
                     } else {
-                        //NOTICE: encoding of zeros is done by combining next value and amount of zeroes into single encoded codepoint
-                        // Z zeroes amount encoding C codepoint encoding ZZZZCCCC
-                        // to handle it create inherited value thats gonna handleded and consumed in next iteration 
-                        // only exception to this rule are endoing of 16 zeros in a row wich gives value F0 which is directly encoded without need to inherit to next iteration
-                        // other excpetion is encoding of remaining values being zero which equals to value 00 which encoded directly as above
                         byte numberOfZeros = 1;
 
                         while ((valueInTableIndex < (currentDCTtable.Length - 1)) && (currentDCTtable[valueInTableIndex + 1].value == 0)) {
@@ -637,7 +641,6 @@ namespace MultistageSteganography
                                 oldBitstreamLength += currentValue.originalCodedLength;
                             }
                         } else {
-                            // 00000000
                             short valueToEncode = 0x00;
                             int encodedLength = encodeAndAddCodepointToList(valueToEncode, jpgFileStatistics.decodedDCTtables[tableIndex].ACidentifier, ref jpgFileStatistics.jpgFileHeaders, ref newBitstreamToOverride);
                             newBitstreamLength += encodedLength;
@@ -675,29 +678,6 @@ namespace MultistageSteganography
                 currentIndex++;
             }
 
-            // cb = 1
-            // value = 1000 0000
-            // bo = 7
-            // buffer = 1000 0000 0000 0000
-            // buffer = 1111 1111 1000 0000
-
-            // cb  = 1
-            // bo = 7
-            // covoc = 4
-            // 1111 1000 0000 0000
-            // 1111 1111 1111 1000
-
-            // cb = 7
-            // bo = 1
-            // covoc = 7
-
-            // 16 - cb - (8 - covoc) % 9
-            // 1111 1110 0000 0000
-            // 1111 1111 0000 0000
-
-            // 1100 0000 0000 0000
-            // 1111 1100 0000 0000
-
             for (long i = 1; i < oldBitstreamLength / 8; i++) {
                 if (fileBytes[i + jpgFileStatistics.jpgFileHeaders.imageDataStartOffsetInBytes] == 0xFF) {
                     oldBitstreamLength += 8;
@@ -724,7 +704,6 @@ namespace MultistageSteganography
                 writeEncodedValueToStream((byte)(buffer >> 8), ref memoryStream);
                 buffer = (UInt16)(buffer << 8);
 
-                //NOTICE: only fix marker if it's byte aligned?
                 while (currentNotOverridenByte <= jpgFileStatistics.endOfScanOffset) {
                     if (fileBytes[currentNotOverridenByte] == 0 && fileBytes[currentNotOverridenByte - 1] == 0xFF) {
                         currentNotOverridenByte++;
@@ -758,7 +737,12 @@ namespace MultistageSteganography
             fileBytes = memoryStream.ToArray();
         }
 
-        private static byte[] extractNBytesOfDataFromDCTtables (UInt64 n, ref List<DCTtable> decodedDCTtables, ref int currentTableIndex, ref int currentValueInTableIndex)
+        private static byte[] extractNBytesOfDataFromDCTtables (
+            UInt64 n, 
+            ref List<DCTtable> decodedDCTtables,
+            ref int currentTableIndex,
+            ref int currentValueInTableIndex
+        )
         {
             List<byte> resultBytesList = new List<byte>();
             byte[] result = null;
@@ -826,14 +810,14 @@ namespace MultistageSteganography
 
         public static byte[] readBitsFromBinaryReader(ref HuffmanCodesBinaryTree huffmanCodesBinaryTree, ref byte[] overReadBitsFromPreviousRead, ref MemoryStreamWithTypedReads binaryReader)
         {
-            int additionAmountOfBitsToRead = 0;
+            int additionalAmountOfBitsToRead = 0;
 
             if (huffmanCodesBinaryTree.maxCodeLength > overReadBitsFromPreviousRead.Length) {
-                additionAmountOfBitsToRead = huffmanCodesBinaryTree.maxCodeLength - overReadBitsFromPreviousRead.Length;
+                additionalAmountOfBitsToRead = huffmanCodesBinaryTree.maxCodeLength - overReadBitsFromPreviousRead.Length;
             }
 
-            byte[] readAdditonalBits = new byte[additionAmountOfBitsToRead];
-            readAdditonalBits = binaryReader.readBitsCorrectForNullMarker((byte)additionAmountOfBitsToRead);
+            byte[] readAdditonalBits = new byte[additionalAmountOfBitsToRead];
+            readAdditonalBits = binaryReader.readBitsCorrectForNullMarker((byte)additionalAmountOfBitsToRead);
             byte[] readBits = new byte[huffmanCodesBinaryTree.maxCodeLength > overReadBitsFromPreviousRead.Length ? huffmanCodesBinaryTree.maxCodeLength : overReadBitsFromPreviousRead.Length];
             Array.Copy(overReadBitsFromPreviousRead, 0, readBits, 0, overReadBitsFromPreviousRead.Length);
             Array.Copy(readAdditonalBits, 0, readBits, overReadBitsFromPreviousRead.Length, readAdditonalBits.Length);
@@ -841,8 +825,13 @@ namespace MultistageSteganography
             return readBits;
         }
 
-        public static DCTvalue extractValueFromBits(ref byte[] readBits, ref MemoryStreamWithTypedReads binaryReader, ref JpgHeaders jpgFileHeaders, byte signedCodepointLength, int overflowLength)
-        {
+        public static DCTvalue extractValueFromBits(
+            ref byte[] readBits,
+            ref MemoryStreamWithTypedReads binaryReader,
+            ref JpgHeaders jpgFileHeaders,
+            byte signedCodepointLength,
+            int overflowLength
+        ) {
             byte[] signedCodepoint = new byte[signedCodepointLength];
 
             Array.Copy(readBits, (readBits.Length - overflowLength), signedCodepoint, 0, 
@@ -964,7 +953,7 @@ namespace MultistageSteganography
 
             while (!binaryReader.checkForEndOfImageMarker()) {
                 for (int componentIndex = 0; componentIndex < numberOfComponents; componentIndex++) {
-                    for (int componentRepetIndex = 0; componentRepetIndex < jpgFileHeaders.jpgComponents[componentIndex].repeatCount; componentRepetIndex++) {
+                    for (int componentRepeatIndex = 0; componentRepeatIndex < jpgFileHeaders.jpgComponents[componentIndex].repeatCount; componentRepeatIndex++) {
                         DCTtable currentDCTtable = new DCTtable();
                         currentDCTtable.DCidentifier = (byte)(jpgFileHeaders.jpgComponents[componentIndex].DCtableSelector);
                         currentDCTtable.ACidentifier = (byte)(0x10 | (jpgFileHeaders.jpgComponents[componentIndex].ACtableSelector));
@@ -976,10 +965,22 @@ namespace MultistageSteganography
                         CodepointValueAndOverflowLength codepointValueAndOverflowLength = huffmanCodesBinaryTree.binaryTree.findFirstMatchingCodepoint(readBits);
                         UInt16 encodedLengthLength = (UInt16)(readBits.Length - codepointValueAndOverflowLength.overflowLength);
 
-                        currentDCTtable.table[0] = extractValueFromBits(ref readBits, ref binaryReader, ref jpgFileHeaders, codepointValueAndOverflowLength.value, codepointValueAndOverflowLength.overflowLength);
+                        currentDCTtable.table[0] = extractValueFromBits(
+                            ref readBits,
+                            ref binaryReader,
+                            ref jpgFileHeaders,
+                            codepointValueAndOverflowLength.value,
+                            codepointValueAndOverflowLength.overflowLength
+                        );
                         currentDCTtable.table[0].originalCodedLength += encodedLengthLength;
 
-                        copyOverflowBits(ref codepointValueAndOverflowLength, ref huffmanCodesBinaryTree, ref overReadBits, ref readBits, codepointValueAndOverflowLength.value);
+                        copyOverflowBits(
+                            ref codepointValueAndOverflowLength,
+                            ref huffmanCodesBinaryTree,
+                            ref overReadBits,
+                            ref readBits,
+                            codepointValueAndOverflowLength.value
+                        );
 
                         int currentDCTtableIndex = 1;
                         huffmanCodesBinaryTree = jpgFileHeaders.huffmanCodesBinaryTrees[currentDCTtable.ACidentifier];
@@ -1003,11 +1004,23 @@ namespace MultistageSteganography
                             currentDCTtableIndex += numberOfZeroes;
 
                             if (currentDCTtableIndex != 64 && numberOfZeroes != 16) {
-                                currentDCTtable.table[currentDCTtableIndex] = extractValueFromBits(ref readBits, ref binaryReader, ref jpgFileHeaders, ACsignedCodepointLength, codepointValueAndOverflowLength.overflowLength);
+                                currentDCTtable.table[currentDCTtableIndex] = extractValueFromBits(
+                                    ref readBits,
+                                    ref binaryReader,
+                                    ref jpgFileHeaders,
+                                    ACsignedCodepointLength,
+                                    codepointValueAndOverflowLength.overflowLength
+                                );
                                 currentDCTtable.table[currentDCTtableIndex].originalCodedLength += encodedLengthLength;
                             }
 
-                            copyOverflowBits(ref codepointValueAndOverflowLength, ref huffmanCodesBinaryTree, ref overReadBits, ref readBits, ACsignedCodepointLength);
+                            copyOverflowBits(
+                                ref codepointValueAndOverflowLength,
+                                ref huffmanCodesBinaryTree,
+                                ref overReadBits,
+                                ref readBits,
+                                ACsignedCodepointLength
+                            );
 
                             currentDCTtableIndex++;
                         }
